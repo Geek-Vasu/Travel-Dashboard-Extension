@@ -4,6 +4,8 @@ import { Compass, Calendar, CreditCard, ChevronLeft, RefreshCw, AlertTriangle, I
 import Timeline from '../components/Timeline';
 import BookingCard from '../components/BookingCard';
 import SourceEmailModal from '../components/SourceEmailModal';
+import CalendarSync from '../components/CalendarSync';
+import PackingAssistant from '../components/PackingAssistant';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 
 export default function TripDetail() {
@@ -178,7 +180,8 @@ export default function TripDetail() {
             {[
               { id: 'bookings', label: `Bookings (${trip.bookings.length})` },
               { id: 'insights', label: `Insights (${trip.insights.length})` },
-              { id: 'spend', label: 'Spend Share' }
+              { id: 'spend', label: 'Spend Share' },
+              { id: 'packing', label: '🎒 Packing' }
             ].map((tab) => (
               <button 
                 key={tab.id}
@@ -307,11 +310,18 @@ export default function TripDetail() {
               </div>
             )}
 
+            {activeTab === 'packing' && (
+              <PackingAssistant tripId={trip.id} />
+            )}
+
           </div>
 
         </div>
 
       </div>
+
+      {/* Calendar Sync actions */}
+      <CalendarSync tripId={trip.id} tripName={trip.trip_name} />
 
       {/* Traceability Modal */}
       <SourceEmailModal 

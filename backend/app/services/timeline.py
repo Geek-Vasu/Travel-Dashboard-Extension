@@ -1,6 +1,6 @@
 import datetime
 from sqlalchemy.orm import Session
-from ..models import Booking, TimelineEvent
+from ..models import Booking, TimelineEvent, Trip
 
 def parse_iso_datetime(dt_str) -> datetime.datetime:
     if not dt_str:
@@ -20,8 +20,13 @@ def generate_trip_timeline(db: Session, trip_id: int) -> list[TimelineEvent]:
     Clears old timeline events for the trip and generates new ones based on 
     all currently associated bookings, sorted chronologically.
     """
-    # Clear old timeline events
-    db.query(TimelineEvent).filter(TimelineEvent.trip_id == trip_id).delete()
+    trip = db.query(Trip).filter(Trip.id == trip_id).first()
+    if not trip:
+        return []
+        
+    # Clear old timeline events via ORM relationship to avoid out-of-sync session cache/duplicate commits
+    trip.timeline_events.clear()
+    db.flush()
     
     bookings = db.query(Booking).filter(Booking.trip_id == trip_id).all()
     events = []

@@ -12,7 +12,8 @@ import {
   ChevronLeft,
   Compass,
   User,
-  LogOut
+  LogOut,
+  ExternalLink
 } from 'lucide-react';
 
 export default function Sidebar({ expanded, setExpanded }) {
@@ -42,6 +43,7 @@ export default function Sidebar({ expanded, setExpanded }) {
     { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', type: 'link' },
     { name: 'Trips', icon: Map, path: '/dashboard#trips', type: 'scroll', targetId: 'trips-section' },
     { name: 'Timeline', icon: Calendar, path: '/dashboard#timeline', type: 'scroll', targetId: 'timeline-section' },
+    { name: 'Google Calendar', icon: ExternalLink, path: 'https://calendar.google.com/', type: 'external' },
     { name: 'Insights', icon: Sparkles, path: '/validate', type: 'link' },
     { name: 'Analytics', icon: BarChart3, path: '/dashboard#analytics', type: 'scroll', targetId: 'analytics-section' },
     { name: 'Settings', icon: Settings, path: '#settings', type: 'modal' },
@@ -66,6 +68,9 @@ export default function Sidebar({ expanded, setExpanded }) {
     } else if (item.type === 'modal') {
       e.preventDefault();
       alert('Settings & Simulation toggles are available in the top right console badge.');
+    } else if (item.type === 'external') {
+      e.preventDefault();
+      window.open(item.path, '_blank');
     }
   };
 

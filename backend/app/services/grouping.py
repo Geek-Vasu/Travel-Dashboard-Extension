@@ -30,13 +30,13 @@ def get_booking_destination(booking_type: str, details: dict) -> str:
     elif booking_type == "hotel":
         hotel_name = (details.get("hotel_name") or "").lower()
         address = (details.get("address") or "").lower()
-        for city in ["mumbai", "goa", "delhi", "bangalore", "pune", "hyderabad", "chennai", "kolkata"]:
+        for city in ["mumbai", "goa", "delhi", "bangalore", "pune", "hyderabad", "chennai", "kolkata", "jaipur", "amritsar"]:
             if city in hotel_name or city in address:
                 return city.capitalize()
         return details.get("hotel_name") or "Unknown"
     elif booking_type == "train":
         arr = details.get("arrival_station") or ""
-        for city in ["delhi", "mumbai", "goa", "amritsar", "jaipur"]:
+        for city in ["mumbai", "goa", "delhi", "bangalore", "pune", "hyderabad", "chennai", "kolkata", "jaipur", "amritsar"]:
             if city in arr.lower():
                 return city.capitalize()
         return arr or "Unknown"
@@ -173,6 +173,8 @@ def add_booking_to_trip(db: Session, user_id: int, raw_booking: dict) -> Booking
         ).first()
         
     if existing_booking:
+        old_trip_id = existing_booking.trip_id
+        
         # Perform reference upsert
         # Update cost, details, confidence, source details
         existing_booking.cost = raw_booking.get("cost", existing_booking.cost)
@@ -184,13 +186,41 @@ def add_booking_to_trip(db: Session, user_id: int, raw_booking: dict) -> Booking
         existing_booking.source_gmail_link = raw_booking.get("source_gmail_link")
         existing_booking.confidence_score = raw_booking.get("confidence_score", existing_booking.confidence_score)
         
-        # Merge details
-        current_details = existing_booking.details or {}
-        current_details.update(details)
+        # Merge details using a copy to ensure SQLAlchemy registers the change
+        current_details = dict(existing_booking.details or {})
+        for k, v in details.items():
+            if v is not None or k not in current_details:
+                current_details[k] = v
         existing_booking.details = current_details
+        
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(existing_booking, "details")
+        
+        # Re-evaluate trip association based on updated dates
+        destination = get_booking_destination(booking_type, current_details)
+        booking_start, booking_end = get_booking_dates(booking_type, current_details)
+        
+        new_trip = find_or_create_trip(db, user_id, destination, booking_start, booking_end)
+        existing_booking.trip_id = new_trip.id
         
         db.add(existing_booking)
         db.flush()
+        
+        # Re-generate timeline or delete the old trip if it has no bookings left
+        if old_trip_id and old_trip_id != new_trip.id:
+            old_trip_bookings_count = db.query(Booking).filter(Booking.trip_id == old_trip_id).count()
+            if old_trip_bookings_count == 0:
+                from ..models import TimelineEvent, Insight, PackingItem, EmailProcessing
+                db.query(EmailProcessing).filter(EmailProcessing.trip_id == old_trip_id).update(
+                    {EmailProcessing.trip_id: None}, synchronize_session=False
+                )
+                db.query(TimelineEvent).filter(TimelineEvent.trip_id == old_trip_id).delete(synchronize_session=False)
+                db.query(Insight).filter(Insight.trip_id == old_trip_id).delete(synchronize_session=False)
+                db.query(PackingItem).filter(PackingItem.trip_id == old_trip_id).delete(synchronize_session=False)
+                db.query(Trip).filter(Trip.id == old_trip_id).delete(synchronize_session=False)
+            else:
+                from .timeline import generate_trip_timeline
+                generate_trip_timeline(db, old_trip_id)
         return existing_booking
 
     # 2. Extract booking destination and dates

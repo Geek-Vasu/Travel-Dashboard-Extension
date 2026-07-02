@@ -7,10 +7,13 @@ import EmailScanner from './pages/EmailScanner';
 import Dashboard from './pages/Dashboard';
 import TripDetail from './pages/TripDetail';
 import ExtractionValidation from './pages/ExtractionValidation';
+import ChatButton from './components/ChatButton';
+import ChatDrawer from './components/ChatDrawer';
 
 function AppContent() {
   const location = useLocation();
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
+  const [chatOpen, setChatOpen] = useState(false);
   const isLanding = location.pathname === '/';
 
   return (
@@ -40,6 +43,13 @@ function AppContent() {
 
 
       </div>
+
+      {!isLanding && (
+        <>
+          <ChatButton onClick={() => setChatOpen(!chatOpen)} isOpen={chatOpen} />
+          <ChatDrawer isOpen={chatOpen} onClose={() => setChatOpen(false)} />
+        </>
+      )}
     </div>
   );
 }

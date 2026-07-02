@@ -44,8 +44,11 @@ class GmailEmailProvider(EmailProvider):
     def fetch_messages(self, limit: int = 15) -> List[Dict[str, Any]]:
         # Search query looking for travel indicators (excluding noisy invoice/receipt terms)
         query = "subject:(flight OR hotel OR booking OR reservation OR PNR OR confirmation OR ticket)"
-        results = self.service.users().messages().list(userId='me', q=query, maxResults=min(limit, 50)).execute()
-        messages = results.get('messages', [])
+        try:
+            results = self.service.users().messages().list(userId='me', q=query, maxResults=min(limit, 50)).execute()
+            messages = results.get('messages', [])
+        except Exception as e:
+            raise Exception(f"Gmail API Query Failure: {str(e)}. Please check if your Google API is enabled, or delete token.json to run in simulation/demo mode.")
         
         summaries = []
         for msg in messages:

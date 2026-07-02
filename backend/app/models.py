@@ -52,6 +52,11 @@ class Trip(Base):
     end_date = Column(Date, nullable=False)
     status = Column(String, default="Upcoming")  # "Upcoming", "Ongoing", "Completed"
     ai_summary = Column(Text, nullable=True)
+    
+    # Calendar sync fields (Phase 2)
+    calendar_sync_enabled = Column(String, default=None, nullable=True) # None | "synced" | "error"
+    calendar_event_ids = Column(JSON, nullable=True)
+    last_calendar_sync = Column(DateTime, nullable=True)
 
     user = relationship("User", back_populates="trips")
     bookings = relationship("Booking", back_populates="trip", cascade="all, delete-orphan")
@@ -104,3 +109,29 @@ class Insight(Base):
     insight_type = Column(String, default="rule_based")  # "rule_based", "ai_summary"
 
     trip = relationship("Trip", back_populates="insights")
+
+class PackingItem(Base):
+    __tablename__ = "packing_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False)
+    category = Column(String, nullable=False)
+    item_name = Column(String, nullable=False)
+    is_checked = Column(Integer, default=0)  # 0 = false, 1 = true
+    created_by = Column(String, default="ai")  # "ai" | "user"
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    trip = relationship("Trip")
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    role = Column(String, nullable=False)  # "user" | "assistant"
+    content = Column(Text, nullable=False)
+    sources = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    user = relationship("User")
+

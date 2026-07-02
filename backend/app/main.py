@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 
 from .database import engine, Base, get_db
-from .models import User, EmailProcessing, Trip, Booking, TimelineEvent, Insight
+from .models import User, EmailProcessing, Trip, Booking, TimelineEvent, Insight, PackingItem, ChatMessage
 from .schemas import (
     TripResponse, DetailedTripResponse, EmailProcessingResponse,
     DashboardData, DashboardStats, CategorySpend, MonthlySpend,
@@ -26,9 +26,32 @@ from .services.extractor import get_booking_extractor
 from .services.grouping import add_booking_to_trip
 from .services.timeline import generate_trip_timeline
 from .services.insights import generate_hybrid_insights
+from .services.calendar_service import sync_trip_to_calendar, remove_trip_from_calendar, get_calendar_sync_status
+from .services.packing_service import generate_packing_list, get_packing_list, update_packing_item, delete_packing_item, add_custom_item
+from .services.chat_service import chat_with_assistant, get_chat_history, clear_chat_history
+
 
 # Initialize Database tables
 Base.metadata.create_all(bind=engine)
+
+# Phase 2 migrations to add calendar columns to trips table if they do not exist
+try:
+    from sqlalchemy import inspect, text
+    inspector = inspect(engine)
+    columns = [col['name'] for col in inspector.get_columns('trips')]
+    with engine.connect() as conn:
+        if 'calendar_sync_enabled' not in columns:
+            conn.execute(text('ALTER TABLE trips ADD COLUMN calendar_sync_enabled VARCHAR'))
+            conn.commit()
+        if 'calendar_event_ids' not in columns:
+            conn.execute(text('ALTER TABLE trips ADD COLUMN calendar_event_ids JSON'))
+            conn.commit()
+        if 'last_calendar_sync' not in columns:
+            conn.execute(text('ALTER TABLE trips ADD COLUMN last_calendar_sync TIMESTAMP'))
+            conn.commit()
+except Exception as e:
+    print(f"Migration error/info: {e}")
+
 
 app = FastAPI(title="Travel Dashboard Organizer API")
 
@@ -73,7 +96,7 @@ def get_default_user_id(db: Session) -> int:
     return user.id
 
 # Global variable to simulate scan progress in background
-scan_progress = {"is_scanning": False, "processed": 0, "total": 0}
+scan_progress = {"is_scanning": False, "processed": 0, "total": 0, "error": None}
 
 def background_scan_task(user_id: int, db_url: str):
     """
@@ -91,6 +114,7 @@ def background_scan_task(user_id: int, db_url: str):
     
     try:
         scan_progress["is_scanning"] = True
+        scan_progress["error"] = None
         
         # Clear old process runs and trips to allow fresh scans in simulation
         db.query(EmailProcessing).filter(EmailProcessing.user_id == user_id).delete(synchronize_session=False)
@@ -101,6 +125,7 @@ def background_scan_task(user_id: int, db_url: str):
             db.query(Insight).filter(Insight.trip_id.in_(trip_ids)).delete(synchronize_session=False)
             db.query(TimelineEvent).filter(TimelineEvent.trip_id.in_(trip_ids)).delete(synchronize_session=False)
             db.query(Booking).filter(Booking.trip_id.in_(trip_ids)).delete(synchronize_session=False)
+            db.query(PackingItem).filter(PackingItem.trip_id.in_(trip_ids)).delete(synchronize_session=False)
             
         db.query(Trip).filter(Trip.user_id == user_id).delete(synchronize_session=False)
         db.commit()
@@ -206,6 +231,10 @@ def background_scan_task(user_id: int, db_url: str):
                 
             scan_progress["processed"] = idx + 1
             
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        scan_progress["error"] = str(e)
     finally:
         scan_progress["is_scanning"] = False
         db.close()
@@ -220,7 +249,14 @@ def get_google_auth_url():
     
     redirect_uri = settings.google_redirect_uri
     client_id = settings.google_client_id
-    scopes = "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid"
+    scopes_list = [
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/calendar.events",
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/userinfo.profile",
+        "openid"
+    ]
+    scopes = " ".join(scopes_list)
     auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id={client_id}&redirect_uri={redirect_uri}&scope={scopes}&access_type=offline&prompt=consent"
     return {"status": "oauth_available", "url": auth_url}
 
@@ -251,7 +287,8 @@ def google_auth_callback(code: str, db: Session = Depends(get_db)):
                 "https://www.googleapis.com/auth/gmail.readonly",
                 "https://www.googleapis.com/auth/userinfo.email",
                 "https://www.googleapis.com/auth/userinfo.profile",
-                "openid"
+                "openid",
+                "https://www.googleapis.com/auth/calendar.events"
             ]
         )
         flow.redirect_uri = settings.google_redirect_uri
@@ -331,6 +368,7 @@ def get_scanner_status(db: Session = Depends(get_db)):
         "is_scanning": scan_progress["is_scanning"],
         "processed": scan_progress["processed"],
         "total": scan_progress["total"],
+        "error": scan_progress.get("error"),
         "logs": serialized_logs
     }
 
@@ -570,3 +608,92 @@ def get_spend_analytics(db: Session = Depends(get_db)):
         "category_spend": category_data,
         "monthly_spend": [m for m in monthly_data if m.spend > 0] or [MonthlySpend(month="Jun", spend=0.0)]
     }
+
+# --- Calendar Integration ---
+
+@app.post("/api/calendar/sync/{trip_id}")
+def sync_calendar(trip_id: int, db: Session = Depends(get_db)):
+    """Sync trip timeline events to Google Calendar."""
+    result = sync_trip_to_calendar(db, trip_id)
+    return result
+
+@app.get("/api/calendar/status/{trip_id}")
+def calendar_status(trip_id: int, db: Session = Depends(get_db)):
+    """Get calendar sync status for a trip."""
+    result = get_calendar_sync_status(db, trip_id)
+    return result
+
+@app.delete("/api/calendar/remove/{trip_id}")
+def remove_calendar(trip_id: int, db: Session = Depends(get_db)):
+    """Remove all calendar events for a trip."""
+    result = remove_trip_from_calendar(db, trip_id)
+    return result
+
+# --- Packing Assistant ---
+
+@app.get("/api/packing/{trip_id}")
+def get_packing(trip_id: int, db: Session = Depends(get_db)):
+    """Get packing list for a trip."""
+    items = get_packing_list(db, trip_id)
+    return [{"id": i.id, "trip_id": i.trip_id, "category": i.category, "item_name": i.item_name, "is_checked": i.is_checked, "created_by": i.created_by} for i in items]
+
+@app.post("/api/packing/generate/{trip_id}")
+def generate_packing(trip_id: int, db: Session = Depends(get_db)):
+    """Generate AI-powered packing list."""
+    items = generate_packing_list(db, trip_id)
+    return {"status": "generated", "count": len(items), "items": [{"id": i.id, "trip_id": i.trip_id, "category": i.category, "item_name": i.item_name, "is_checked": i.is_checked, "created_by": i.created_by} for i in items]}
+
+@app.patch("/api/packing/item/{item_id}")
+def patch_packing_item(item_id: int, updates: Dict[str, Any], db: Session = Depends(get_db)):
+    """Toggle check or rename a packing item."""
+    item = update_packing_item(db, item_id, updates)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return {"id": item.id, "trip_id": item.trip_id, "category": item.category, "item_name": item.item_name, "is_checked": item.is_checked, "created_by": item.created_by}
+
+@app.delete("/api/packing/item/{item_id}")
+def remove_packing_item(item_id: int, db: Session = Depends(get_db)):
+    """Delete a packing item."""
+    success = delete_packing_item(db, item_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return {"status": "deleted"}
+
+@app.post("/api/packing/{trip_id}/item")
+def add_packing_item(trip_id: int, data: Dict[str, Any], db: Session = Depends(get_db)):
+    """Add a custom packing item."""
+    category = data.get("category", "Other")
+    item_name = data.get("item_name", "")
+    if not item_name:
+        raise HTTPException(status_code=400, detail="item_name is required")
+    item = add_custom_item(db, trip_id, category, item_name)
+    return {"id": item.id, "trip_id": item.trip_id, "category": item.category, "item_name": item.item_name, "is_checked": item.is_checked, "created_by": item.created_by}
+
+# --- AI Travel Chatbot ---
+
+@app.post("/api/chat")
+def send_chat_message(data: Dict[str, Any], db: Session = Depends(get_db)):
+    """Send a chat message and receive AI response."""
+    user_id = get_default_user_id(db)
+    message = data.get("message", "")
+    if not message:
+        raise HTTPException(status_code=400, detail="message is required")
+    result = chat_with_assistant(db, user_id, message)
+    return result
+
+@app.get("/api/chat/history")
+def get_chat(db: Session = Depends(get_db)):
+    """Get chat conversation history."""
+    user_id = get_default_user_id(db)
+    history = get_chat_history(db, user_id)
+    return {"messages": history}
+
+@app.delete("/api/chat/history")
+def delete_chat(db: Session = Depends(get_db)):
+    """Clear chat conversation history."""
+    user_id = get_default_user_id(db)
+    clear_chat_history(db, user_id)
+    return {"status": "cleared"}
+
+
+
