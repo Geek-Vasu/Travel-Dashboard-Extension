@@ -14,16 +14,31 @@ The interface has been completely overhauled to transition from a harsh digital-
 - **Cohesive Travel Palette**: Built over HSL-tailored slate backgrounds (`#F8FAFC`), pure white surfaces, and deep Indigo accents (`#2563EB`).
 
 ---
-
 ## 🚀 Key Features
 
-- **📬 Automated Inbox Scanner**: Scans user inboxes using optimized Google API queries. Decodes MIME structures, strips HTML, and parses structured payloads.
-- **📅 Dynamic Trip Grouping**: A geographical grouping engine that maps bookings (flights, lodging, cabs, trains) to trips using a **5-day sliding window constraint** (automatically expanding boundaries as new bookings are matched).
-- **🛤️ Chronological Timeline Generator**: Synthesizes check-ins, check-outs, departures, arrivals, and transfers into a single, sorted chronological board.
-- **💡 Actionable Insights Warnings**: Evaluates deterministic travel checks, flagging zero-cost bookings, missing return trips, and hotel checkout vs. flight departure conflicts.
-- **📊 Spend Analytics**: Integrated `reCharts` visualizations tracking categories (Flights, Hotels, Cabs, Trains) and monthly spending trends.
-- **👤 Dynamic User Profile**: Queries the custom `/api/user/me` endpoint to display authentic user information (e.g. name, profile picture fallback, and email) on the console sidebar.
-- **🧪 Offline Demo Mode**: Fully functional offline/simulation sandbox that processes mock emails if Gmail API keys are unconfigured.
+- **📬 Automated Inbox Scanner**: Securely scans the user's Gmail inbox using Google OAuth and optimized Gmail API queries. Decodes MIME messages, strips HTML content, and extracts travel-related information from booking confirmations.
+
+- **🤖 AI-Powered Travel Extraction**: Uses OpenAI to intelligently classify travel emails and extract structured booking information for flights, hotels, trains, and cabs, with heuristic fallbacks to ensure reliability.
+
+- **📅 Dynamic Trip Grouping**: Automatically groups related bookings into unified trips using destination matching and a **5-day sliding window**, continuously updating trip boundaries as new bookings arrive.
+
+- **🛤️ Interactive Timeline Generator**: Combines flights, hotel stays, train journeys, and ground transportation into a single chronological timeline, providing a complete view of the user's itinerary.
+
+- **📆 Google Calendar Integration**: Synchronizes trips with Google Calendar by automatically creating events for flights, hotel check-ins/check-outs, train journeys, and cab pickups, ensuring travel plans seamlessly integrate with the user's schedule.
+
+- **🎒 Intelligent Packing Assistant**: Generates personalized packing checklists using trip details such as destination, weather, duration, and travel type. Users can track packing progress, add custom items, and manage their checklist directly from the dashboard.
+
+- **💬 AI Travel Chatbot**: A context-aware conversational assistant that answers questions about trips, bookings, timelines, expenses, and packing lists using the application's structured travel data instead of raw emails.
+
+- **💡 AI Travel Insights**: Evaluates travel itineraries to generate proactive recommendations and warnings, such as missing return journeys, pending payments, hotel check-out conflicts, and other actionable travel reminders.
+
+- **📊 Spend Analytics**: Interactive Recharts dashboards visualize travel expenses across flights, hotels, trains, and cabs while providing trip-wise and category-wise spending insights.
+
+- **👤 Dynamic User Profile**: Retrieves authenticated user information through the `/api/user/me` endpoint and displays profile details, email address, and account information throughout the application.
+
+- **🔄 Continuous Inbox Synchronization**: Automatically detects newly received travel confirmations and updates existing trips without requiring manual re-scanning, ensuring itineraries remain current.
+
+- **🧪 Offline Demo Mode**: Provides a fully functional simulation environment using mock travel emails, allowing the complete application to be explored without configuring Gmail OAuth or OpenAI credentials.
 
 ---
 
